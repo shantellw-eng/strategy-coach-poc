@@ -29,11 +29,11 @@ PHASE_LABELS = {
 }
 
 # Initial-only examples (optional). Consider removing entirely later.
-INITIAL_EXAMPLES = [
-    "Objective: Double revenue within 12 months.",
-    "Objective: Reach $5m ARR within 18 months while maintaining gross margin above 60%.",
-    "Objective: Increase retention from 85% to 92% within 12 months.",
-]
+#INITIAL_EXAMPLES = [
+#    "Objective: Double revenue within 12 months.",
+#    "Objective: Reach $5m ARR within 18 months while maintaining gross margin above 60%.",
+#    "Objective: Increase retention from 85% to 92% within 12 months.",
+#]
 
 COMMITMENT_QUESTION = "Are you prepared to back this with resources and focus?"
 
@@ -791,15 +791,15 @@ def render_chat_messages(messages):
 render_chat_messages(st.session_state.chat)
 
 # Examples (optional)
-if not st.session_state.has_started and not st.session_state.is_locked:
-    with st.expander("Need a starting example? (Optional)", expanded=False):
-        cols = st.columns(3)
-        for i in range(3):
-            with cols[i]:
-                if st.button(f"Use example {i+1}", key=f"initial_ex_{i}"):
-                    st.session_state.composer_text = INITIAL_EXAMPLES[i]
-                    st.rerun()
-                st.caption(INITIAL_EXAMPLES[i])
+#if not st.session_state.has_started and not st.session_state.is_locked:
+#    with st.expander("Need a starting example? (Optional)", expanded=False):
+#cols = st.columns(3)
+        #for i in range(3):
+#            with cols[i]:
+#                if st.button(f"Use example {i+1}", key=f"initial_ex_{i}"):
+                    #st.session_state.composer_text = INITIAL_EXAMPLES[i]
+                    #st.rerun()
+                #st.caption(INITIAL_EXAMPLES[i])
 
 # Composer
 # Critical: clear_on_submit=True so we don't mutate st.session_state["composer_text"] after widget instantiation
