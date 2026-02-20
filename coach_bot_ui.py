@@ -89,7 +89,7 @@ def inject_css():
           }
           div[data-testid="stToolbar"]:hover{ opacity: 1; }
 
-          /* Account for Streamlit's toolbar height so our header sits below it */
+          /* Push content down to clear the CBG header + sticky progress bar */
           .block-container {
             padding-top: 0rem !important;
             padding-left: 1rem !important;
@@ -97,9 +97,32 @@ def inject_css():
             max-width: 860px;
           }
 
-          /* Full-bleed header — negative margins escape the container */
+          /* Full-bleed header */
           .cbg-header-wrap {
-            margin: -1rem -1rem 2rem -1rem;
+            margin: -1rem -1rem 0 -1rem;
+          }
+
+          /* Sticky progress bar — sits just below the CBG header */
+          .sticky-progress-wrap {
+            position: fixed;
+            top: 58px;
+            left: 0;
+            right: 0;
+            z-index: 99;
+            background: white;
+            border-bottom: 1px solid var(--border);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+            padding: 10px 0 8px 0;
+          }
+          .sticky-progress-inner {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 0 1rem;
+          }
+
+          /* Spacer pushes content below the fixed header + progress bar */
+          .progress-spacer {
+            height: 90px;
           }
 
           /* Brand header bar — square/blocky per Centre CI */
@@ -550,13 +573,12 @@ def render_phase_tracker(current_phase: str, objective: str, scope: str, advanta
         is_current = p == phase
         is_done = phase_done.get(p, False)
 
-        # Connecting line after this step — filled if next step is done or current
         if i < len(PHASES) - 1:
             next_p = PHASES[i + 1]
             next_is_active = phase_done.get(next_p, False) or next_p == phase
-            line_class = "step-line filled" if next_is_active else "step-line"
+            line_color = "var(--brand-mid)" if next_is_active else "var(--border)"
         else:
-            line_class = None
+            line_color = None
 
         if is_done:
             cls = "step-item done"
@@ -570,25 +592,29 @@ def render_phase_tracker(current_phase: str, objective: str, scope: str, advanta
 
         label = PHASE_LABELS[p]
         step_html = (
-            f'<div class="{cls}" style="display:flex;flex-direction:column;align-items:center;flex:1;position:relative;">'
+            f'<div class="{cls}" style="display:flex;flex-direction:column;align-items:center;flex:1;">'
             f'  <div class="step-circle">{circle_content}</div>'
             f'  <div class="step-label">{label}</div>'
             f'</div>'
         )
         steps_html.append(step_html)
 
-        # Insert connecting line between steps
-        if line_class:
-            filled = "filled" in line_class
-            line_color = "var(--brand-mid)" if filled else "var(--border)"
+        if line_color:
             steps_html.append(
-                f'<div style="flex:1;height:2px;background:{line_color};margin-top:14px;align-self:flex-start;margin-left:-1px;margin-right:-1px;"></div>'
+                f'<div style="flex:1;height:2px;background:{line_color};margin-top:14px;"></div>'
             )
 
-    st.markdown(
-        '<div style="display:flex;align-items:flex-start;margin:24px 0 20px 0;padding:0 4px;">'
+    steps_inner = (
+        '<div style="display:flex;align-items:flex-start;padding:0 4px;">'
         + "".join(steps_html)
-        + "</div>",
+        + "</div>"
+    )
+
+    st.markdown(
+        f'<div class="sticky-progress-wrap">'
+        f'  <div class="sticky-progress-inner">{steps_inner}</div>'
+        f'</div>'
+        f'<div class="progress-spacer"></div>',
         unsafe_allow_html=True,
     )
 
