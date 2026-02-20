@@ -19,7 +19,7 @@ import anthropic
 STATE_OPEN = "<STATE_JSON>"
 STATE_CLOSE = "</STATE_JSON>"
 
-APP_VERSION = "v1.1"
+APP_VERSION = "v1.2"
 
 PHASES = ["objective", "scope", "advantage", "draft", "refine"]
 PHASE_LABELS = {
@@ -99,30 +99,7 @@ def inject_css():
 
           /* Full-bleed header */
           .cbg-header-wrap {
-            margin: -1rem -1rem 0 -1rem;
-          }
-
-          /* Sticky progress bar — sits just below the CBG header */
-          .sticky-progress-wrap {
-            position: fixed;
-            top: 58px;
-            left: 0;
-            right: 0;
-            z-index: 99;
-            background: white;
-            border-bottom: 1px solid var(--border);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-            padding: 10px 0 8px 0;
-          }
-          .sticky-progress-inner {
-            max-width: 860px;
-            margin: 0 auto;
-            padding: 0 1rem;
-          }
-
-          /* Spacer pushes content below the fixed header + progress bar */
-          .progress-spacer {
-            height: 90px;
+            margin: -1rem -1rem 2rem -1rem;
           }
 
           /* Brand header bar — square/blocky per Centre CI */
@@ -450,8 +427,34 @@ def normalise_state(state: dict) -> dict:
         "draft_statement": as_str(state.get("draft_statement", "")).strip(),
         "refined_statement": as_str(state.get("refined_statement", "")).strip(),
     }
+
+    # Validate phase
     if out["current_phase"] not in PHASES:
         out["current_phase"] = "objective"
+
+    # Sanity check: if the model reports a phase that's behind what's actually
+    # populated, advance it. This corrects the common model error of returning
+    # "objective" when scope/advantage are already filled.
+    has_objective = bool(out["objective"])
+    has_scope = bool(out["scope"])
+    has_advantage = bool(out["advantage"])
+    has_draft = bool(out["draft_statement"] or out["refined_statement"])
+
+    inferred = "objective"
+    if has_draft:
+        inferred = "refine" if out["current_phase"] == "refine" else "draft"
+    elif has_advantage:
+        inferred = "draft" if out["current_phase"] in ["draft", "refine"] else "advantage"
+    elif has_scope:
+        inferred = "advantage" if out["current_phase"] in ["advantage", "draft", "refine"] else "scope"
+    elif has_objective:
+        inferred = "scope" if out["current_phase"] in ["scope", "advantage", "draft", "refine"] else "objective"
+
+    # Only advance, never go backwards
+    phase_order = {p: i for i, p in enumerate(PHASES)}
+    if phase_order.get(inferred, 0) > phase_order.get(out["current_phase"], 0):
+        out["current_phase"] = inferred
+
     return out
 
 
@@ -611,10 +614,7 @@ def render_phase_tracker(current_phase: str, objective: str, scope: str, advanta
     )
 
     st.markdown(
-        f'<div class="sticky-progress-wrap">'
-        f'  <div class="sticky-progress-inner">{steps_inner}</div>'
-        f'</div>'
-        f'<div class="progress-spacer"></div>',
+        f'<div style="margin: 24px 0 20px 0;">{steps_inner}</div>',
         unsafe_allow_html=True,
     )
 
@@ -865,6 +865,17 @@ if not st.session_state.has_started and not st.session_state.is_locked:
                     st.session_state.composer_text = INITIAL_EXAMPLES[i]
                     st.rerun()
                 st.caption(INITIAL_EXAMPLES[i])
+
+# Step indicator — sits just above the message box
+_phase = st.session_state.strategy_state.get("current_phase", "objective") or "objective"
+_phase_idx = PHASES.index(_phase) + 1 if _phase in PHASES else 1
+_phase_label = PHASE_LABELS.get(_phase, "Objective")
+st.markdown(
+    f'<div style="font-size:0.78rem;color:var(--muted);margin-bottom:4px;">'
+    f'Step {_phase_idx} of {len(PHASES)} &nbsp;—&nbsp; <strong style="color:var(--brand);">{_phase_label}</strong>'
+    f'</div>',
+    unsafe_allow_html=True,
+)
 
 # Composer
 # Critical: clear_on_submit=True so we don't mutate st.session_state["composer_text"] after widget instantiation
