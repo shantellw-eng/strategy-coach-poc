@@ -29,11 +29,11 @@ PHASE_LABELS = {
 }
 
 # Initial-only examples (optional). Consider removing entirely later.
-#INITIAL_EXAMPLES = [
-#    "Objective: Double revenue within 12 months.",
-#    "Objective: Reach $5m ARR within 18 months while maintaining gross margin above 60%.",
-#    "Objective: Increase retention from 85% to 92% within 12 months.",
-#]
+INITIAL_EXAMPLES = [
+    "We're a plumbing business with 4 staff. I want to grow revenue by 30% in the next 12 months without taking on more residential work.",
+    "I run a dental practice and want to increase the number of high-value patients — things like implants and cosmetic work — over the next 18 months.",
+    "We're an accounting firm serving small business owners. I want to stop competing on price and grow profit margin over the next 12 months.",
+]
 
 COMMITMENT_QUESTION = "Are you prepared to back this with resources and focus?"
 
@@ -45,7 +45,7 @@ st.set_page_config(
     page_title="Strategy Coach",
     layout="centered",
     # Keep the clean look, but allow toggle + activity indicator via Streamlit chrome
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="collapsed",  # sidebar hidden by default for end users
 )
 
 # -----------------------------
@@ -520,8 +520,8 @@ def render_phase_tracker(current_phase: str, objective: str, scope: str, advanta
         "objective": done(objective),
         "scope": done(scope),
         "advantage": done(advantage),
-        "draft": False,
-        "refine": False,
+        "draft": phase in ["draft", "refine"],
+        "refine": phase == "refine",
     }
 
     steps_html = []
@@ -529,9 +529,17 @@ def render_phase_tracker(current_phase: str, objective: str, scope: str, advanta
         is_current = p == phase
         is_done = phase_done.get(p, False)
 
+        # Connecting line after this step — filled if next step is done or current
+        if i < len(PHASES) - 1:
+            next_p = PHASES[i + 1]
+            next_is_active = phase_done.get(next_p, False) or next_p == phase
+            line_class = "step-line filled" if next_is_active else "step-line"
+        else:
+            line_class = None
+
         if is_done:
             cls = "step-item done"
-            circle_content = ""  # tick added via CSS ::after
+            circle_content = ""
         elif is_current:
             cls = "step-item current"
             circle_content = str(i + 1)
@@ -540,15 +548,26 @@ def render_phase_tracker(current_phase: str, objective: str, scope: str, advanta
             circle_content = str(i + 1)
 
         label = PHASE_LABELS[p]
-        steps_html.append(
-            f'<div class="{cls}">'
+        step_html = (
+            f'<div class="{cls}" style="display:flex;flex-direction:column;align-items:center;flex:1;position:relative;">'
             f'  <div class="step-circle">{circle_content}</div>'
             f'  <div class="step-label">{label}</div>'
             f'</div>'
         )
+        steps_html.append(step_html)
+
+        # Insert connecting line between steps
+        if line_class:
+            filled = "filled" in line_class
+            line_color = "var(--brand-mid)" if filled else "var(--border)"
+            steps_html.append(
+                f'<div style="flex:1;height:2px;background:{line_color};margin-top:14px;align-self:flex-start;margin-left:-1px;margin-right:-1px;"></div>'
+            )
 
     st.markdown(
-        '<div class="step-progress">' + "".join(steps_html) + "</div>",
+        '<div style="display:flex;align-items:flex-start;margin:24px 0 20px 0;padding:0 4px;">'
+        + "".join(steps_html)
+        + "</div>",
         unsafe_allow_html=True,
     )
 
@@ -668,8 +687,8 @@ with st.sidebar:
     )
 
     st.divider()
-    ss = st.session_state.strategy_state
-    phase = ss.get("current_phase", "objective") or "objective"
+    # Always read directly from session_state — never use a cached snapshot
+    phase = st.session_state.strategy_state.get("current_phase", "objective") or "objective"
     st.subheader("Current focus")
     st.markdown(f"**{PHASE_LABELS.get(phase, 'Objective')}**")
 
@@ -677,15 +696,15 @@ with st.sidebar:
     st.subheader("Working Strategy")
     st.caption("Updates as the session progresses.")
     st.markdown("**Objective**")
-    st.write(ss.get("objective") or "—")
+    st.write(st.session_state.strategy_state.get("objective") or "—")
     st.markdown("**Scope**")
-    st.write(ss.get("scope") or "—")
+    st.write(st.session_state.strategy_state.get("scope") or "—")
     st.markdown("**Advantage**")
-    st.write(ss.get("advantage") or "—")
+    st.write(st.session_state.strategy_state.get("advantage") or "—")
 
-    if ss.get("strategic_assumptions") and phase in ["draft", "refine"]:
+    if st.session_state.strategy_state.get("strategic_assumptions") and phase in ["draft", "refine"]:
         st.markdown("**Assumptions**")
-        for a in (ss.get("strategic_assumptions") or [])[:5]:
+        for a in (st.session_state.strategy_state.get("strategic_assumptions") or [])[:5]:
             st.write(f"- {a}")
 
     if st.session_state.final_strategy:
@@ -740,13 +759,12 @@ with st.sidebar:
     if st.session_state.last_error:
         st.warning(st.session_state.last_error)
 
-# Phase tracker
-ss = st.session_state.strategy_state
+# Phase tracker — always read directly from session_state
 render_phase_tracker(
-    current_phase=ss.get("current_phase", "objective"),
-    objective=ss.get("objective", ""),
-    scope=ss.get("scope", ""),
-    advantage=ss.get("advantage", ""),
+    current_phase=st.session_state.strategy_state.get("current_phase", "objective"),
+    objective=st.session_state.strategy_state.get("objective", ""),
+    scope=st.session_state.strategy_state.get("scope", ""),
+    advantage=st.session_state.strategy_state.get("advantage", ""),
 )
 
 # Chat messages — agent-style transcript, single column
@@ -791,15 +809,15 @@ def render_chat_messages(messages):
 render_chat_messages(st.session_state.chat)
 
 # Examples (optional)
-#if not st.session_state.has_started and not st.session_state.is_locked:
-#    with st.expander("Need a starting example? (Optional)", expanded=False):
-#cols = st.columns(3)
-        #for i in range(3):
-#            with cols[i]:
-#                if st.button(f"Use example {i+1}", key=f"initial_ex_{i}"):
-                    #st.session_state.composer_text = INITIAL_EXAMPLES[i]
-                    #st.rerun()
-                #st.caption(INITIAL_EXAMPLES[i])
+if not st.session_state.has_started and not st.session_state.is_locked:
+    with st.expander("Need a starting example? (Optional)", expanded=False):
+        cols = st.columns(3)
+        for i in range(3):
+            with cols[i]:
+                if st.button(f"Use example {i+1}", key=f"initial_ex_{i}"):
+                    st.session_state.composer_text = INITIAL_EXAMPLES[i]
+                    st.rerun()
+                st.caption(INITIAL_EXAMPLES[i])
 
 # Composer
 # Critical: clear_on_submit=True so we don't mutate st.session_state["composer_text"] after widget instantiation
