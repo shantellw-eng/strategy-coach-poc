@@ -19,7 +19,7 @@ import anthropic
 STATE_OPEN = "<STATE_JSON>"
 STATE_CLOSE = "</STATE_JSON>"
 
-APP_VERSION = "v1.2"
+APP_VERSION = "v1.1"
 
 PHASES = ["objective", "scope", "advantage", "draft", "refine"]
 PHASE_LABELS = {
