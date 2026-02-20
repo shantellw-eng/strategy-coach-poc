@@ -19,6 +19,8 @@ import anthropic
 STATE_OPEN = "<STATE_JSON>"
 STATE_CLOSE = "</STATE_JSON>"
 
+APP_VERSION = "v1.1"
+
 PHASES = ["objective", "scope", "advantage", "draft", "refine"]
 PHASE_LABELS = {
     "objective": "Objective",
@@ -367,6 +369,25 @@ def load_system_prompt() -> str:
         raise FileNotFoundError(f"system_prompt.txt not found next to coach_bot_ui.py. Expected at: {path}")
     with open(path, "r", encoding="utf-8") as f:
         return f.read().strip()
+
+
+def get_prompt_version() -> str:
+    """Extract version string from the second line of system_prompt.txt."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "system_prompt.txt")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        for line in lines[:5]:
+            if "VERSION" in line.upper():
+                # Extract e.g. "V10.0" from "VERSION V10.0 — Centre for Business Growth"
+                parts = line.strip().split()
+                for part in parts:
+                    if part.upper().startswith("V") and any(c.isdigit() for c in part):
+                        return part.strip("—").strip()
+    except Exception:
+        pass
+    return "unknown"
 
 
 def split_user_text_and_state(full_text: str) -> Tuple[str, Optional[dict]]:
@@ -877,3 +898,11 @@ if send and composer.strip() and not st.session_state.is_locked:
         st.session_state.last_error = str(e)
         st.session_state.chat.append({"role": "assistant", "content": f"Error calling the model: {str(e)}"})
         st.rerun()
+
+# Version label — subtle, bottom right
+st.markdown(
+    f'<div style="text-align:right;color:#C0C8D0;font-size:0.72rem;margin-top:2rem;padding-bottom:0.5rem;">'
+    f'UI {APP_VERSION} &nbsp;·&nbsp; Prompt {get_prompt_version()}'
+    f'</div>',
+    unsafe_allow_html=True,
+)
