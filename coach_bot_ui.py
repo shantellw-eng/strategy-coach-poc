@@ -557,7 +557,7 @@ def call_model(conversation_messages: List[dict], session_mode: str) -> str:
     return "".join(block.text for block in response.content if hasattr(block, "text"))
 
 
-def render_phase_tracker(current_phase: str, objective: str, scope: str, advantage: str):
+def render_phase_tracker(current_phase: str, objective: str, scope: str, advantage: str, is_locked: bool = False):
     phase = current_phase if current_phase in PHASES else "objective"
 
     def done(val: str) -> bool:
@@ -567,8 +567,8 @@ def render_phase_tracker(current_phase: str, objective: str, scope: str, advanta
         "objective": done(objective),
         "scope": done(scope),
         "advantage": done(advantage),
-        "draft": phase in ["draft", "refine"],
-        "refine": phase == "refine",
+        "draft": phase == "refine",
+        "refine": is_locked,
     }
 
     steps_html = []
@@ -812,6 +812,7 @@ render_phase_tracker(
     objective=st.session_state.strategy_state.get("objective", ""),
     scope=st.session_state.strategy_state.get("scope", ""),
     advantage=st.session_state.strategy_state.get("advantage", ""),
+    is_locked=st.session_state.get("is_locked", False),
 )
 
 # Chat messages — agent-style transcript, single column
