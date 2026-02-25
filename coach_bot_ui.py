@@ -21,14 +21,17 @@ STATE_CLOSE = "</STATE_JSON>"
 
 APP_VERSION = "v1.1"
 
-PHASES = ["objective", "scope", "advantage", "draft", "refine"]
+PHASES = ["orientation", "objective", "scope", "advantage", "strategy_statement", "commit"]
 PHASE_LABELS = {
+    "orientation": "Orientation",
     "objective": "Objective",
     "scope": "Scope",
     "advantage": "Advantage",
-    "draft": "Draft",
-    "refine": "Refine",
+    "strategy_statement": "Strategy Statement",
+    "commit": "Commit",
 }
+# Phases shown in the step tracker — orientation is silent setup, not a numbered step
+DISPLAY_PHASES = ["objective", "scope", "advantage", "strategy_statement", "commit"]
 
 # Initial-only examples (optional). Consider removing entirely later.
 INITIAL_EXAMPLES = [
@@ -291,6 +294,20 @@ def inject_css():
             color: var(--brand-mid);
           }
 
+          /* Reset button — compact, muted, right-aligned with message box */
+          [data-testid="stMain"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child .stButton > button {
+            padding: 0.1rem 0.5rem !important;
+            font-size: 0.73rem !important;
+            font-weight: 400 !important;
+            color: var(--muted) !important;
+            border-color: var(--border) !important;
+            width: 100%;
+          }
+          [data-testid="stMain"] [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:last-child .stButton > button:hover {
+            color: var(--brand-mid) !important;
+            border-color: var(--brand-mid) !important;
+          }
+
           /* Send button — square, navy, not red */
           div[data-testid="stForm"] button[kind="primary"],
           button[kind="primary"],
@@ -311,6 +328,12 @@ def inject_css():
           section[data-testid="stSidebar"] {
             border-right: 1px solid var(--border);
           }
+
+          /* Always show the sidebar collapse (<<) button — not just on hover */
+          [data-testid="stSidebarCollapseButton"] button {
+            opacity: 1 !important;
+          }
+
           /* Agent-style conversation transcript — single column, no bubbles */
           .chat-feed {
             display: flex;
@@ -391,18 +414,21 @@ def get_prompt_version() -> str:
 
 
 def split_user_text_and_state(full_text: str) -> Tuple[str, Optional[dict]]:
+    def _last_known_state() -> Optional[dict]:
+        return st.session_state.get("strategy_state") or None
+
     if not full_text:
-        return "", None
+        return "", _last_known_state()
     start = full_text.rfind(STATE_OPEN)
     end = full_text.rfind(STATE_CLOSE)
     if start == -1 or end == -1 or end < start:
-        return full_text.strip(), None
+        return full_text.strip(), _last_known_state()
     user_text = full_text[:start].strip()
     blob = full_text[start + len(STATE_OPEN) : end].strip()
     try:
         return user_text, json.loads(blob)
     except json.JSONDecodeError:
-        return user_text, None
+        return user_text, _last_known_state()
 
 
 def normalise_state(state: dict) -> dict:
@@ -418,6 +444,9 @@ def normalise_state(state: dict) -> dict:
         return [s] if s else []
 
     out = {
+        "business_type": as_str(state.get("business_type", "")).strip(),
+        "industry": as_str(state.get("industry", "")).strip(),
+        "team_size": as_str(state.get("team_size", "")).strip(),
         "objective": as_str(state.get("objective", "")).strip(),
         "scope": as_str(state.get("scope", "")).strip(),
         "advantage": as_str(state.get("advantage", "")).strip(),
@@ -430,7 +459,7 @@ def normalise_state(state: dict) -> dict:
 
     # Validate phase
     if out["current_phase"] not in PHASES:
-        out["current_phase"] = "objective"
+        out["current_phase"] = "orientation"
 
     # Sanity check: if the model reports a phase that's behind what's actually
     # populated, advance it. This corrects the common model error of returning
@@ -440,15 +469,15 @@ def normalise_state(state: dict) -> dict:
     has_advantage = bool(out["advantage"])
     has_draft = bool(out["draft_statement"] or out["refined_statement"])
 
-    inferred = "objective"
+    inferred = "orientation"
     if has_draft:
-        inferred = "refine" if out["current_phase"] == "refine" else "draft"
+        inferred = "commit" if out["current_phase"] == "commit" else "strategy_statement"
     elif has_advantage:
-        inferred = "draft" if out["current_phase"] in ["draft", "refine"] else "advantage"
+        inferred = "strategy_statement" if out["current_phase"] in ["strategy_statement", "commit"] else "advantage"
     elif has_scope:
-        inferred = "advantage" if out["current_phase"] in ["advantage", "draft", "refine"] else "scope"
+        inferred = "advantage" if out["current_phase"] in ["advantage", "strategy_statement", "commit"] else "scope"
     elif has_objective:
-        inferred = "scope" if out["current_phase"] in ["scope", "advantage", "draft", "refine"] else "objective"
+        inferred = "scope" if out["current_phase"] in ["scope", "advantage", "strategy_statement", "commit"] else "objective"
 
     # Only advance, never go backwards
     phase_order = {p: i for i, p in enumerate(PHASES)}
@@ -548,7 +577,7 @@ def call_model(conversation_messages: List[dict], session_mode: str) -> str:
 
     response = client.messages.create(
         model=model_name,
-        max_tokens=1100,
+        max_tokens=2000,
         temperature=0.4,
         system=system_prompt,
         messages=messages,
@@ -558,7 +587,7 @@ def call_model(conversation_messages: List[dict], session_mode: str) -> str:
 
 
 def render_phase_tracker(current_phase: str, objective: str, scope: str, advantage: str, is_locked: bool = False):
-    phase = current_phase if current_phase in PHASES else "objective"
+    phase = current_phase if current_phase in PHASES else "orientation"
 
     def done(val: str) -> bool:
         return bool((val or "").strip())
@@ -567,17 +596,17 @@ def render_phase_tracker(current_phase: str, objective: str, scope: str, advanta
         "objective": done(objective),
         "scope": done(scope),
         "advantage": done(advantage),
-        "draft": phase == "refine",
-        "refine": is_locked,
+        "strategy_statement": phase == "commit",
+        "commit": is_locked,
     }
 
     steps_html = []
-    for i, p in enumerate(PHASES):
+    for i, p in enumerate(DISPLAY_PHASES):
         is_current = p == phase
         is_done = phase_done.get(p, False)
 
-        if i < len(PHASES) - 1:
-            next_p = PHASES[i + 1]
+        if i < len(DISPLAY_PHASES) - 1:
+            next_p = DISPLAY_PHASES[i + 1]
             next_is_active = phase_done.get(next_p, False) or next_p == phase
             line_color = "var(--brand-mid)" if next_is_active else "var(--border)"
         else:
@@ -681,11 +710,14 @@ with st.container():
 # Init session state
 if "strategy_state" not in st.session_state:
     st.session_state.strategy_state = {
+        "business_type": "",
+        "industry": "",
+        "team_size": "",
         "objective": "",
         "scope": "",
         "advantage": "",
         "strategic_assumptions": [],
-        "current_phase": "objective",
+        "current_phase": "orientation",
         "next_question": "",
         "draft_statement": "",
         "refined_statement": "",
@@ -698,8 +730,10 @@ if "chat" not in st.session_state:
         {
             "role": "assistant",
             "content": (
-                "We’ll build this step by step.\n\n"
-                "Before we go further, what does the business do, and who pays you?"
+                "Before we dive in — three quick things that’ll help me make this useful.\n\n"
+                "Are your customers mainly other businesses, or direct to consumers?\n\n"
+                "What industry are you in — roughly?\n\n"
+                "And how many people work in the business?"
             ),
         },
     ]
@@ -739,6 +773,16 @@ with st.sidebar:
     st.subheader("Current focus")
     st.markdown(f"**{PHASE_LABELS.get(phase, 'Objective')}**")
 
+    biz_type = st.session_state.strategy_state.get("business_type") or ""
+    industry  = st.session_state.strategy_state.get("industry") or ""
+    team_size = st.session_state.strategy_state.get("team_size") or ""
+    if any([biz_type, industry, team_size]):
+        st.divider()
+        st.subheader("Business context")
+        if biz_type:  st.write(f"**Type:** {biz_type.upper()}")
+        if industry:  st.write(f"**Industry:** {industry}")
+        if team_size: st.write(f"**Team:** {team_size}")
+
     st.divider()
     st.subheader("Working Strategy")
     st.caption("Updates as the session progresses.")
@@ -749,7 +793,7 @@ with st.sidebar:
     st.markdown("**Advantage**")
     st.write(st.session_state.strategy_state.get("advantage") or "—")
 
-    if st.session_state.strategy_state.get("strategic_assumptions") and phase in ["draft", "refine"]:
+    if st.session_state.strategy_state.get("strategic_assumptions") and phase in ["strategy_statement", "commit"]:
         st.markdown("**Assumptions**")
         for a in (st.session_state.strategy_state.get("strategic_assumptions") or [])[:5]:
             st.write(f"- {a}")
@@ -787,21 +831,6 @@ with st.sidebar:
         if st.button("Clear input", disabled=st.session_state.is_locked):
             st.session_state.composer_text = ""
             st.rerun()
-
-    st.divider()
-    if st.button("Reset session"):
-        for k in [
-            "chat",
-            "strategy_state",
-            "composer_text",
-            "last_error",
-            "has_started",
-            "final_strategy",
-            "is_locked",
-            "assistant_asked_commitment",
-        ]:
-            st.session_state.pop(k, None)
-        st.rerun()
 
     if st.session_state.last_error:
         st.warning(st.session_state.last_error)
@@ -867,16 +896,31 @@ if not st.session_state.has_started and not st.session_state.is_locked:
                     st.rerun()
                 st.caption(INITIAL_EXAMPLES[i])
 
-# Step indicator — sits just above the message box
+# Step indicator + Reset — sits just above the message box
 _phase = st.session_state.strategy_state.get("current_phase", "objective") or "objective"
-_phase_idx = PHASES.index(_phase) + 1 if _phase in PHASES else 1
+_phase_idx = DISPLAY_PHASES.index(_phase) + 1 if _phase in DISPLAY_PHASES else 1
 _phase_label = PHASE_LABELS.get(_phase, "Objective")
-st.markdown(
-    f'<div style="font-size:0.78rem;color:var(--muted);margin-bottom:4px;">'
-    f'Step {_phase_idx} of {len(PHASES)} &nbsp;—&nbsp; <strong style="color:var(--brand);">{_phase_label}</strong>'
-    f'</div>',
-    unsafe_allow_html=True,
-)
+_ind_col, _reset_col = st.columns([5, 1])
+with _ind_col:
+    st.markdown(
+        f'<div style="font-size:0.78rem;color:var(--muted);margin-bottom:4px;line-height:32px;">'
+        f'Step {_phase_idx} of {len(PHASES)} &nbsp;—&nbsp; <strong style="color:var(--brand);">{_phase_label}</strong>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+with _reset_col:
+    if st.button(
+        "↺ Reset",
+        help="Clears the entire conversation and starts again from Step 1.",
+        key="reset_main",
+        use_container_width=True,
+    ):
+        for k in [
+            "chat", "strategy_state", "composer_text", "last_error",
+            "has_started", "final_strategy", "is_locked", "assistant_asked_commitment",
+        ]:
+            st.session_state.pop(k, None)
+        st.rerun()
 
 # Composer
 # Critical: clear_on_submit=True so we don't mutate st.session_state["composer_text"] after widget instantiation
@@ -911,6 +955,15 @@ if send and composer.strip() and not st.session_state.is_locked:
     try:
         raw = call_model(st.session_state.chat, session_mode=session_mode)
         user_facing, state = split_user_text_and_state(raw)
+
+        # --- TEMPORARY DEBUG ---
+        start = raw.rfind(STATE_OPEN)
+        end = raw.rfind(STATE_CLOSE)
+        raw_blob = raw[start + len(STATE_OPEN): end].strip() if (start != -1 and end != -1) else "(STATE_JSON not found)"
+        print("\n--- DEBUG STATE_JSON ---")
+        print(raw_blob)
+        print("--- END STATE_JSON ---\n")
+        # --- END DEBUG ---
 
         st.session_state.chat.append({"role": "assistant", "content": user_facing})
         st.session_state.assistant_asked_commitment = (COMMITMENT_QUESTION in user_facing)
