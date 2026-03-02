@@ -7,4 +7,4 @@ if (Test-Path ".\venv\Scripts\Activate.ps1") {
 }
 
 # Run Streamlit
-streamlit run coach_bot_ui.py
+streamlit run ui\coach_bot_ui.py

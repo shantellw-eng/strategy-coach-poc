@@ -392,7 +392,8 @@ def inject_css():
 
 def load_system_prompt() -> str:
     here = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(here, "system_prompt.txt")
+    path = os.path.join(here, "..", "coaches", "strategy", "system_prompt.txt")
+    
     if not os.path.exists(path):
         raise FileNotFoundError(f"system_prompt.txt not found next to coach_bot_ui.py. Expected at: {path}")
     with open(path, "r", encoding="utf-8") as f:
