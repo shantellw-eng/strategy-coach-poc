@@ -19,7 +19,7 @@ import anthropic
 STATE_OPEN = "<STATE_JSON>"
 STATE_CLOSE = "</STATE_JSON>"
 
-APP_VERSION = "v1.1"
+APP_VERSION = "v1.4"
 
 PHASES = ["orientation", "objective", "scope", "advantage", "strategy_statement", "commit"]
 PHASE_LABELS = {
@@ -330,6 +330,11 @@ def inject_css():
           }
 
           /* Always show the sidebar collapse (<<) button — not just on hover */
+          [data-testid="stSidebarCollapseButton"] {
+            position: fixed !important;
+            top: 1rem !important;
+            z-index: 999 !important;
+          }
           [data-testid="stSidebarCollapseButton"] button {
             opacity: 1 !important;
           }
@@ -575,6 +580,15 @@ def call_model(conversation_messages: List[dict], session_mode: str) -> str:
         if m["role"] in ["user", "assistant"]
     ]
 
+    # Inject STATE_JSON compliance reminder every 4 turns
+    if len(messages) >= 8 and len(messages) % 4 == 0:
+        reminder = (
+            "[SYSTEM REMINDER: You MUST append a valid <STATE_JSON>...</STATE_JSON> block "
+            "at the end of your next reply. This is mandatory on every single response. "
+            "Do not skip it. The application will break without it.]"
+        )
+        messages.insert(-1, {"role": "user", "content": reminder})
+
     response = client.messages.create(
         model=model_name,
         max_tokens=2000,
@@ -584,7 +598,8 @@ def call_model(conversation_messages: List[dict], session_mode: str) -> str:
     )
 
     return "".join(block.text for block in response.content if hasattr(block, "text"))
-
+    
+    
 
 def render_phase_tracker(current_phase: str, objective: str, scope: str, advantage: str, is_locked: bool = False):
     phase = current_phase if current_phase in PHASES else "orientation"
@@ -953,7 +968,8 @@ if send and composer.strip() and not st.session_state.is_locked:
     st.session_state.has_started = True
 
     try:
-        raw = call_model(st.session_state.chat, session_mode=session_mode)
+        with st.spinner("Marvin is thinking…"):
+            raw = call_model(st.session_state.chat, session_mode=session_mode)
         user_facing, state = split_user_text_and_state(raw)
 
         # --- TEMPORARY DEBUG ---
