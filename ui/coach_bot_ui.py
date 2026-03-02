@@ -403,7 +403,7 @@ def load_system_prompt() -> str:
 def get_prompt_version() -> str:
     """Extract version string from the second line of system_prompt.txt."""
     here = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(here, "system_prompt.txt")
+    path = os.path.join(here, "..", "coaches", "strategy", "system_prompt.txt")
     try:
         with open(path, "r", encoding="utf-8") as f:
             lines = f.readlines()
